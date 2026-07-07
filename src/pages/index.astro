@@ -1,0 +1,40 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+const base = import.meta.env.BASE_URL;
+const daily = (await getCollection('daily')).sort(
+  (a, b) => b.data.date.getTime() - a.data.date.getTime(),
+);
+const weekly = (await getCollection('weekly')).sort(
+  (a, b) => b.data.date.getTime() - a.data.date.getTime(),
+);
+---
+
+<Base title="AI Radar — 每日 AI 情報">
+  <h2>每日精選</h2>
+  <ul class="index">
+    {
+      daily.map((d) => (
+        <li>
+          <a href={`${base}daily/${d.id}/`}>{d.data.title}</a>
+          {d.data.itemCount ? <span>{d.data.itemCount} 篇</span> : null}
+        </li>
+      ))
+    }
+    {daily.length === 0 && <li><span>尚無資料 — pipeline 產出後會自動出現</span></li>}
+  </ul>
+
+  <h2>每週回顧</h2>
+  <ul class="index">
+    {
+      weekly.map((w) => (
+        <li>
+          <a href={`${base}weekly/${w.id}/`}>{w.data.title}</a>
+          {w.data.highlightCount ? <span>{w.data.highlightCount} 精選</span> : null}
+        </li>
+      ))
+    }
+    {weekly.length === 0 && <li><span>尚無資料</span></li>}
+  </ul>
+</Base>

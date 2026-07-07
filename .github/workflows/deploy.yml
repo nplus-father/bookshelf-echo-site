@@ -1,0 +1,20 @@
+# Build the Astro site and publish to GitHub Pages.
+# Prereq: repo Settings → Pages → Source = "GitHub Actions".
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: nplus-father/workflows/.github/workflows/astro-build-deploy.yml@v1
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    secrets: inherit
+    with:
+      run-lint: false
+      run-format-check: false
