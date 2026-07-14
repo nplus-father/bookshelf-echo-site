@@ -5,5 +5,5 @@ import { defineConfig } from 'astro/config';
 // Swap `site`/`base` (or drop `base`) if a custom domain is configured later.
 export default defineConfig({
   site: 'https://nplus-father.github.io',
-  base: '/ai-radar-site',
+  base: '/ai-radar-site/',
 });
