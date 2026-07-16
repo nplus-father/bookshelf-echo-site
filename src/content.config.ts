@@ -22,4 +22,14 @@ const weekly = defineCollection({
   }),
 });
 
-export const collections = { daily, weekly };
+// news-echo：每日一篇書櫃評析（可缺席——「有共鳴才寫」是合法輸出）。
+const essays = defineCollection({
+  loader: glob({ pattern: '*.md', base: './content/essays' }),
+  schema: z.object({
+    title: z.string(),
+    date: z.coerce.date(),
+    kind: z.string().optional(),
+  }),
+});
+
+export const collections = { daily, weekly, essays };
