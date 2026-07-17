@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const base = import.meta.env.BASE_URL;
 
-// Written by the ai-radar publisher (SnapshotJob) and synced into public/ by its
+// Written by the bookshelf-echo publisher (SnapshotJob) and synced into public/ by its
 // site-publisher sidecar. Absent on a fresh clone and before the first sync, so
 // the page renders a placeholder rather than failing the build.
 let snap: any = null;
@@ -79,8 +79,8 @@ const captured = snap?.capturedAt
 ---
 
 <Base
-  title="AI Radar — 系統健康"
-  description="ai-radar pipeline 的健康指標：佇列深度、項目狀態、LLM 花費與 DLQ"
+  title="Bookshelf Echo — 系統健康"
+  description="bookshelf-echo pipeline 的健康指標：佇列深度、項目狀態、LLM 花費與 DLQ"
 >
   <p><a class="back" href={base}>← 回首頁</a></p>
 

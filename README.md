@@ -1,6 +1,6 @@
-# ai-radar-site
+# bookshelf-echo-site
 
-Static site (Astro) for the [ai-radar](https://github.com/nplus-father/ai-radar)
+Static site (Astro) for the [bookshelf-echo](https://github.com/nplus-father/bookshelf-echo)
 daily AI-and-technology digest. The pipeline's `publisher` writes the daily and
 weekly markdown into `content/`; a git sidecar on the host commits & pushes it
 here, and GitHub Actions builds this Astro site and deploys it to GitHub Pages.
