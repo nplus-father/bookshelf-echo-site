@@ -1,7 +1,7 @@
 import { getCollection } from 'astro:content';
 
 // Served at nplus.wiki (org Pages custom domain); keep deep links on that host.
-const SITE = 'https://nplus.wiki/ai-radar-site';
+const SITE = 'https://nplus.wiki/bookshelf-echo-site';
 
 type Highlight = {
   title: string;

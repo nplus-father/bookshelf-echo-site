@@ -1,14 +1,14 @@
 import { getCollection } from 'astro:content';
 
 // Served at nplus.wiki (org Pages custom domain); keep deep links on that host.
-const SITE = 'https://nplus.wiki/ai-radar-site';
+const SITE = 'https://nplus.wiki/bookshelf-echo-site';
 
 type EssayBook = { title: string; chapter: string | null };
 
 /**
  * Machine-readable latest essay (news-echo), consumed by nplus-backend's
  * AiRadarDailyPushJob — same public-JSON contract style as daily.json.
- * Parses the markdown ai-radar's EssayRenderer emits; that format is owned by
+ * Parses the markdown bookshelf-echo's EssayRenderer emits; that format is owned by
  * us, so the line-based parse is stable. Days without an essay are legal
  * (寧缺勿濫): the payload then has date: null.
  */
