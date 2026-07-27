@@ -1,69 +1,288 @@
 ---
 import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
+import { byNewest } from '../lib/essay';
 import { bookSiteUrl, bookCoverUrl } from '../lib/library';
 
 const base = import.meta.env.BASE_URL;
-const essays = (await getCollection('essays')).sort(
-  (a, b) => b.data.date.getTime() - a.data.date.getTime(),
-);
+const essays = (await getCollection('essays')).sort(byNewest);
 
 // This is the site's signature view: the shelf indexed by what it has answered.
-// Group every cited book (by slug, or title when a book has no published site)
-// and list the essays that drew on it.
-type Agg = { title: string; slug?: string; essays: { id: string; title: string; date: string }[] };
+// 引用只會愈積愈多，所以這一頁的組織方式要先於資料量決定——次數、主題、
+// 以及「哪一類新聞把哪一類書拉下架」的交叉，都是聚合之後才看得見的東西。
+type Cite = { id: string; title: string; date: string; newsCategory?: string };
+type Agg = {
+  key: string;
+  title: string;
+  slug?: string;
+  author?: string;
+  category?: string;
+  cites: Cite[];
+};
+
+const UNCATEGORISED = 'uncategorised';
 const byKey = new Map<string, Agg>();
 for (const e of essays) {
   for (const b of e.data.books ?? []) {
-    const key = b.slug ?? b.title;
-    const agg = byKey.get(key) ?? { title: b.title, slug: b.slug, essays: [] };
-    agg.essays.push({ id: e.id, title: e.data.title, date: e.data.date.toISOString().slice(0, 10) });
+    // 有 slug 用 slug，沒有才退回書名——但兩者要分屬不同命名空間，否則一本書
+    // 哪天缺了 slug 就會被拆成兩筆，而且愈晚愈難察覺。
+    const key = b.slug ? `slug:${b.slug}` : `title:${b.title}`;
+    const agg = byKey.get(key) ?? { key, title: b.title, slug: b.slug, cites: [] };
+    // metadata 取最先出現（也就是最新一篇）的非空值：書庫改過分類時以新的為準。
+    agg.author ??= b.author;
+    agg.category ??= b.category;
+    agg.cites.push({
+      id: e.id,
+      title: e.data.title,
+      date: e.data.date.toISOString().slice(0, 10),
+      newsCategory: e.data.news?.category,
+    });
     byKey.set(key, agg);
   }
 }
+
 const books = [...byKey.values()].sort(
-  (a, b) => b.essays.length - a.essays.length || a.title.localeCompare(b.title),
+  (a, b) => b.cites.length - a.cites.length || a.title.localeCompare(b.title),
 );
+const maxCites = Math.max(1, ...books.map((b) => b.cites.length));
+const totalCites = books.reduce((s, b) => s + b.cites.length, 0);
+
+// 主題分群。未分類的一律排最後：那是資料的缺口，不是一個主題。
+const groupMap = new Map<string, Agg[]>();
+for (const b of books) {
+  const c = b.category ?? UNCATEGORISED;
+  groupMap.set(c, [...(groupMap.get(c) ?? []), b]);
+}
+const groups = [...groupMap.entries()].sort(([ka, va], [kb, vb]) => {
+  if (ka === UNCATEGORISED) return 1;
+  if (kb === UNCATEGORISED) return -1;
+  return vb.length - va.length || ka.localeCompare(kb);
+});
+
+// 新聞類別 × 書主題的交叉：這個站最獨特的一句話是「哪一類新聞總是打到哪一類
+// 書」，而那只有兩邊都有分類時才說得出口。資料還太薄就整段不出現——寧可少一
+// 塊，也不要拿三個點畫出一張看起來有結論的表。
+type Cell = { news: string; book: string; n: number };
+const cells = new Map<string, Cell>();
+for (const b of books) {
+  for (const c of b.cites) {
+    if (!c.newsCategory || !b.category) continue;
+    const k = `${c.newsCategory}|${b.category}`;
+    const cell = cells.get(k) ?? { news: c.newsCategory, book: b.category, n: 0 };
+    cell.n += 1;
+    cells.set(k, cell);
+  }
+}
+const newsCats = [...new Set([...cells.values()].map((c) => c.news))].sort();
+const bookCats = [...new Set([...cells.values()].map((c) => c.book))].sort();
+const matrixMax = Math.max(1, ...[...cells.values()].map((c) => c.n));
+const showMatrix = cells.size >= 4 && newsCats.length >= 2 && bookCats.length >= 2;
+const cellAt = (n: string, b: string) => cells.get(`${n}|${b}`)?.n ?? 0;
+
+const label = (c: string) => (c === UNCATEGORISED ? 'Uncategorised' : c.replace(/-/g, ' '));
 ---
 
 <Base title="Books — Bookshelf Echo">
   <h1>Books</h1>
-  <p class="essay-meta">How the shelf has answered the news, grouped by book.</p>
-  <ul class="book-index">
-    {
-      books.map((bk) => (
-        <li id={bk.slug}>
-          {bk.slug && (
-            <a href={bookSiteUrl(bk.slug)} target="_blank" rel="noopener noreferrer">
-              <img
-                class="bi-cover"
-                src={bookCoverUrl(bk.slug)}
-                alt={`Cover of ${bk.title}`}
-                loading="lazy"
-                onerror="this.remove();"
-              />
-            </a>
-          )}
-          <div class="bi-body">
-            {bk.slug ? (
-              <a class="bi-title" href={bookSiteUrl(bk.slug)} target="_blank" rel="noopener noreferrer">
-                {bk.title}
-              </a>
-            ) : (
-              <span class="bi-title">{bk.title}</span>
-            )}
-            <ul class="bi-essays">
-              {bk.essays.map((e) => (
-                <li>
-                  <span class="e-date">{e.date}</span>
-                  <a href={`${base}essays/${e.id}/`}>{e.title}</a>
-                </li>
+  <p class="essay-meta">
+    How the shelf has answered the news — {books.length} books, {totalCites} citations across {
+      essays.length
+    } essays.
+  </p>
+
+  {
+    groups.length > 1 && (
+      <div class="filters" data-filters>
+        <button class="chip-btn is-on" data-cat="*" type="button">
+          All <span class="chip-n">{books.length}</span>
+        </button>
+        {groups.map(([c, list]) => (
+          <button class="chip-btn" data-cat={c} type="button">
+            {label(c)} <span class="chip-n">{list.length}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  {
+    groups.map(([category, list]) => (
+      <section class="cat-group" data-group={category}>
+        <h2 class="cat-head">
+          {label(category)} <span class="cat-n">{list.length}</span>
+        </h2>
+        <ul class="shelf">
+          {list.map((bk) => (
+            <li class="shelf-item" id={bk.slug}>
+              <div class="si-cover-wrap">
+                {bk.slug && (
+                  <a href={bookSiteUrl(bk.slug)} target="_blank" rel="noopener noreferrer">
+                    <img
+                      class="si-cover"
+                      src={bookCoverUrl(bk.slug)}
+                      alt={`Cover of ${bk.title}`}
+                      loading="lazy"
+                      onerror="this.closest('.si-cover-wrap')?.classList.add('no-cover'); this.remove();"
+                    />
+                  </a>
+                )}
+                <span class="si-badge" title={`${bk.cites.length} citations`}>
+                  {bk.cites.length}
+                </span>
+              </div>
+              <div class="si-body">
+                {bk.slug ? (
+                  <a class="si-title" href={bookSiteUrl(bk.slug)} target="_blank" rel="noopener noreferrer">
+                    {bk.title}
+                  </a>
+                ) : (
+                  <span class="si-title">{bk.title}</span>
+                )}
+                {bk.author && <span class="si-author">{bk.author}</span>}
+                <div class="si-meter" aria-hidden="true">
+                  <span style={`width:${(bk.cites.length / maxCites) * 100}%`} />
+                </div>
+                <details class="si-cites" open={bk.cites.length <= 3}>
+                  <summary>
+                    {bk.cites.length} {bk.cites.length === 1 ? 'essay' : 'essays'}
+                  </summary>
+                  <ul>
+                    {bk.cites.map((c) => (
+                      <li>
+                        <span class="e-date">{c.date}</span>
+                        <a href={`${base}essays/${c.id}/`}>{c.title}</a>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))
+  }
+
+  {books.length === 0 && <p>No books cited yet.</p>}
+
+  {
+    showMatrix && (
+      <>
+        <h2>News × shelf</h2>
+        <p class="essay-meta">
+          Which kind of story pulls which shelf down. Rows are the news category, columns the book's.
+        </p>
+        <div class="table-wrap">
+          <table class="matrix">
+            <thead>
+              <tr>
+                <th />
+                {bookCats.map((b) => (
+                  <th>{label(b)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {newsCats.map((n) => (
+                <tr>
+                  <th>{label(n)}</th>
+                  {bookCats.map((b) => {
+                    const v = cellAt(n, b);
+                    return (
+                      <td
+                        class={v ? 'has' : ''}
+                        style={v ? `--heat:${(v / matrixMax).toFixed(2)}` : ''}
+                        title={`${label(n)} × ${label(b)}: ${v}`}
+                      >
+                        {v || ''}
+                      </td>
+                    );
+                  })}
+                </tr>
               ))}
-            </ul>
-          </div>
-        </li>
-      ))
-    }
-    {books.length === 0 && <li>No books cited yet.</li>}
-  </ul>
+            </tbody>
+          </table>
+        </div>
+      </>
+    )
+  }
 </Base>
+
+<script>
+  // 篩選只改顯示、不重排 DOM：archive 頁指過來的 #slug 錨點在篩掉又切回來之後
+  // 仍然指得到同一個節點。
+  const bar = document.querySelector('[data-filters]');
+  bar?.addEventListener('click', (ev) => {
+    const btn = (ev.target as HTMLElement).closest('button[data-cat]') as HTMLElement | null;
+    if (!btn) return;
+    const want = btn.dataset.cat;
+    bar.querySelectorAll('button[data-cat]').forEach((b) => b.classList.toggle('is-on', b === btn));
+    document.querySelectorAll<HTMLElement>('.cat-group').forEach((g) => {
+      g.hidden = want !== '*' && g.dataset.group !== want;
+    });
+  });
+</script>
+
+<style>
+  .filters { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1.25rem 0 1.75rem; }
+  .chip-btn {
+    font: inherit; font-size: .82rem; cursor: pointer;
+    background: var(--card); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px; padding: .25rem .7rem;
+  }
+  .chip-btn:hover { color: var(--fg); }
+  .chip-btn.is-on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip-btn.is-on .chip-n { color: #fff; opacity: .8; }
+  .chip-n { color: var(--muted); margin-left: .25rem; font-variant-numeric: tabular-nums; }
+
+  .cat-head {
+    display: flex; align-items: baseline; gap: .5rem;
+    font-size: 1rem; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); margin: 2rem 0 .75rem;
+    padding-bottom: .35rem; border-bottom: 1px solid var(--border);
+  }
+  .cat-n { font-size: .8rem; }
+
+  /* 封面牆：一眼看到書背，次數在角標上，不必逐行讀。 */
+  .shelf {
+    list-style: none; padding: 0; margin: 0;
+    display: grid; gap: 1.25rem;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+  .shelf-item { display: flex; gap: .75rem; align-items: flex-start; }
+  .si-cover-wrap { position: relative; flex: none; line-height: 0; }
+  .si-cover {
+    width: 64px; height: auto; border-radius: 5px; border: 1px solid var(--border);
+    box-shadow: 0 1px 5px rgba(0, 0, 0, .18);
+  }
+  .si-cover-wrap.no-cover {
+    width: 64px; height: 92px; border-radius: 5px;
+    background: var(--card); border: 1px solid var(--border);
+  }
+  .si-badge {
+    position: absolute; top: -6px; right: -6px; min-width: 1.35rem; height: 1.35rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent); color: #fff; border-radius: 999px;
+    font-size: .72rem; font-weight: 700; line-height: 1; padding: 0 .3rem;
+  }
+  .si-body { min-width: 0; flex: 1; }
+  .si-title { display: block; font-weight: 700; line-height: 1.3; color: var(--fg); }
+  a.si-title:hover { color: var(--accent); }
+  .si-author { display: block; color: var(--muted); font-size: .82rem; margin-top: .1rem; }
+  .si-meter { height: 3px; background: var(--border); border-radius: 2px; margin: .45rem 0 .4rem; }
+  .si-meter > span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .si-cites > summary { cursor: pointer; color: var(--muted); font-size: .8rem; }
+  .si-cites ul { list-style: none; padding: 0; margin: .35rem 0 0; }
+  .si-cites li { font-size: .85rem; padding: .12rem 0; line-height: 1.4; }
+  .si-cites .e-date { color: var(--muted); margin-right: .4rem; font-variant-numeric: tabular-nums; }
+
+  .table-wrap { overflow-x: auto; }
+  table.matrix { border-collapse: collapse; font-size: .85rem; margin-top: .75rem; }
+  table.matrix th, table.matrix td {
+    border: 1px solid var(--border); padding: .35rem .55rem; text-align: center;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  table.matrix thead th, table.matrix tbody th { color: var(--muted); font-weight: 600; text-align: left; }
+  /* 熱度用同一個 accent 的透明度階梯，數字仍留在格子裡——顏色不是唯一線索。 */
+  table.matrix td.has { background: color-mix(in srgb, var(--accent) calc(var(--heat) * 55%), transparent); }
+</style>

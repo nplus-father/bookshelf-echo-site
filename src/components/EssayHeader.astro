@@ -23,6 +23,9 @@ const outlet = src && !['news', 'rss', ''].includes(src.toLowerCase())
 // Essays written before the model was recorded fall back to the generic
 // attribution rather than claiming a model we cannot verify.
 const model = data.model?.trim();
+// 關卡要照實說：critic gate 已在 ADR-011 廢除。現在把關的是事前的相關性判定
+// （judge，便宜層）與事後對來源章節的逐字引文比對（QuoteVerifier，字串比對，
+// 不是模型呼叫）。站台上寫著一個不存在的關卡，比不寫還糟。
 const byline = model ? `Written by ${model}` : 'AI-written';
 ---
 
@@ -40,9 +43,18 @@ const byline = model ? `Written by ${model}` : 'AI-written';
   }
 
   <h1>{data.title}</h1>
-  <p class="essay-meta">{day} · {byline}, reviewed by judge + critic</p>
+  <p class="essay-meta">{day} · {byline} · relevance-judged, quotes verified against the source chapters</p>
 
-  {data.news?.summary && <blockquote class="news-summary">{data.news.summary}</blockquote>}
+  {
+    /* 新聞原文摘要是一大段英文，壓在標題和正文之間會擋住讀者要看的東西。
+       預設收合，想對照原文的人再展開。 */
+    data.news?.summary && (
+      <details class="news-summary-box">
+        <summary>News summary（原文摘要）</summary>
+        <blockquote class="news-summary">{data.news.summary}</blockquote>
+      </details>
+    )
+  }
 
   {
     books.length > 0 && (

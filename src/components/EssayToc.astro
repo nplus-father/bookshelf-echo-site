@@ -1,0 +1,60 @@
+---
+/**
+ * 文章導航。essay 是三千字上下的長文，先前完全沒有導航——讀到一半就失去
+ * 位置感。
+ *
+ * 兩種模式，取決於這一篇有沒有小標：
+ *  - 有 h2/h3：列標題（多數 essay 目前沒有，essayist 不強制產生小標）。
+ *  - 沒有：退回列「本篇引用的書」，點擊開章節頁。書才是這個站的骨架，
+ *    沒有小標時它就是最好的路標。
+ *
+ * 寬螢幕（≥1200px）貼在主欄右側，窄螢幕收成 details 放在文章之前。兩份標記
+ * 共用同一份資料，靠 CSS 決定誰出現——避免 client JS。
+ */
+import { bookSiteUrl, chapterUrl, type EssayBook } from '../lib/library';
+
+interface Props {
+  headings: { depth: number; slug: string; text: string }[];
+  books?: EssayBook[];
+}
+const { headings, books = [] } = Astro.props;
+const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
+const mode: 'headings' | 'books' | 'none' =
+  tocHeadings.length >= 2 ? 'headings' : books.length > 0 ? 'books' : 'none';
+const bookLinks = books.map((b) => ({
+  title: b.title,
+  chapter: b.chapter,
+  href: (b.chapter_id ? chapterUrl(b.chapter_id) : null) ?? (b.slug ? bookSiteUrl(b.slug) : null),
+}));
+const label = mode === 'headings' ? '本篇章節' : '本篇引用';
+---
+
+{
+  mode !== 'none' && (
+    <nav class="toc" aria-label={label}>
+      <details class="toc-box" open>
+        <summary>{label}</summary>
+        <ol>
+          {mode === 'headings'
+            ? tocHeadings.map((h) => (
+                <li class={`toc-d${h.depth}`}>
+                  <a href={`#${h.slug}`}>{h.text}</a>
+                </li>
+              ))
+            : bookLinks.map((b) => (
+                <li>
+                  {b.href ? (
+                    <a href={b.href} target="_blank" rel="noopener noreferrer">
+                      {b.title}
+                    </a>
+                  ) : (
+                    <span>{b.title}</span>
+                  )}
+                  {b.chapter && <span class="toc-chapter">{b.chapter}</span>}
+                </li>
+              ))}
+        </ol>
+      </details>
+    </nav>
+  )
+}

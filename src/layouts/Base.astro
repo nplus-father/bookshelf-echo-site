@@ -5,6 +5,9 @@ interface Props {
 }
 const { title, description = 'Bookshelf Echo — reading the day’s news from the shelf' } = Astro.props;
 const base = import.meta.env.BASE_URL;
+// canonical 指向自訂網域上的這一頁（astro.config 的 site 已改成 nplus.wiki）。
+// 沒有它時，github.io 那份 301 前的位址也可能被索引成獨立頁面。
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
 ---
 
 <!doctype html>
@@ -14,6 +17,18 @@ const base = import.meta.env.BASE_URL;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <title>{title}</title>
+    <link rel="canonical" href={canonical} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title="Bookshelf Echo"
+      href={`${base}rss.xml`}
+    />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
     <style is:global>
       :root {
         --bg: #ffffff;
@@ -79,15 +94,58 @@ const base = import.meta.env.BASE_URL;
       .news-response a { font-weight: 600; }
       .news-source { color: var(--muted); font-size: .9rem; margin-left: .35rem; }
       .essay-meta { color: var(--muted); font-size: .85rem; margin: 0 0 1.25rem; }
+      .news-summary-box { margin: 0 0 1.5rem; }
+      .news-summary-box > summary {
+        cursor: pointer; color: var(--muted); font-size: .85rem;
+        list-style: none; display: inline-flex; align-items: center; gap: .35rem;
+      }
+      .news-summary-box > summary::-webkit-details-marker { display: none; }
+      .news-summary-box > summary::before { content: '▸'; font-size: .8em; }
+      .news-summary-box[open] > summary::before { content: '▾'; }
+      .news-summary-box > summary:hover { color: var(--fg); }
       .news-summary {
-        margin: 0 0 1.5rem; padding: .75rem 1rem; border-left: 3px solid var(--accent);
+        margin: .6rem 0 0; padding: .75rem 1rem; border-left: 3px solid var(--accent);
         background: var(--card); border-radius: 0 6px 6px 0; color: var(--fg);
         font-size: .95rem; line-height: 1.65;
       }
       .books-cited { margin-top: 1.25rem; }
 
+      /* ---- 文章導航 ---- */
+      .toc { margin: 0 0 1.75rem; }
+      .toc-box {
+        background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+        padding: .7rem .9rem; font-size: .88rem;
+      }
+      .toc-box > summary {
+        cursor: pointer; color: var(--muted); font-weight: 600;
+        text-transform: uppercase; letter-spacing: .06em; font-size: .72rem;
+      }
+      .toc-box ol { list-style: none; margin: .6rem 0 0; padding: 0; }
+      .toc-box li { padding: .22rem 0; line-height: 1.45; }
+      .toc-box li.toc-d3 { padding-left: .9rem; font-size: .95em; }
+      .toc-box .toc-chapter { display: block; color: var(--muted); font-size: .82rem; }
+      /* 夠寬時才貼到主欄右側；窄螢幕維持文章上方的收合卡片，不擠壓閱讀寬度。 */
+      @media (min-width: 1200px) {
+        .toc {
+          position: fixed; top: 5.5rem; left: calc(50% + 384px);
+          width: 210px; max-height: 72vh; overflow-y: auto; margin: 0;
+        }
+        .toc-box { background: none; border: none; padding: 0; }
+        .toc-box li { border-left: 2px solid var(--border); padding-left: .6rem; }
+      }
+
       /* ---- book cards ---- */
       .book-list { display: flex; flex-wrap: wrap; gap: 1rem; }
+      /* 窄螢幕上換行會把兩張卡片疊成兩排、把正文推到摺線以下。改成橫向捲動，
+         一次看得到一張半，讀者知道右邊還有。 */
+      @media (max-width: 560px) {
+        .book-list {
+          flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x mandatory;
+          margin: 0 -1.25rem; padding: 0 1.25rem .35rem; gap: .75rem;
+        }
+        .book-list::-webkit-scrollbar { height: 4px; }
+        .book-card { flex: 0 0 78%; scroll-snap-align: start; }
+      }
       .book-card { display: flex; gap: .75rem; align-items: flex-start; max-width: 320px; }
       .book-cover-link { flex: none; line-height: 0; }
       .book-cover {
@@ -124,16 +182,7 @@ const base = import.meta.env.BASE_URL;
       .archive-item .a-meta { color: var(--muted); font-size: .88rem; line-height: 1.5; }
       .archive-item .a-meta a { color: var(--muted); text-decoration: underline; }
 
-      /* ---- books index ---- */
-      .book-index { display: grid; gap: 1.75rem; margin: 1.5rem 0 0; padding: 0; list-style: none; }
-      .book-index > li { display: flex; gap: 1rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
-      .book-index .bi-cover { width: 72px; height: auto; border-radius: 5px; border: 1px solid var(--border); box-shadow: 0 1px 5px rgba(0,0,0,.18); flex: none; }
-      .book-index .bi-body { flex: 1; min-width: 0; }
-      .book-index .bi-title { font-size: 1.1rem; font-weight: 700; color: var(--fg); }
-      .book-index a.bi-title:hover { color: var(--accent); }
-      .book-index .bi-essays { list-style: none; padding: 0; margin: .5rem 0 0; }
-      .book-index .bi-essays li { padding: .2rem 0; font-size: .92rem; }
-      .book-index .bi-essays .e-date { color: var(--muted); margin-right: .5rem; }
+      /* books 索引的樣式現在跟著 books.astro 自己走（scoped），不再放在這裡。 */
 
       .prev-next { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2.5rem; font-size: .9rem; }
       .back { color: var(--muted); font-size: .9rem; }
@@ -153,7 +202,8 @@ const base = import.meta.env.BASE_URL;
       <slot />
       <footer>
         <a class="dash-link" href={`${base}dashboard/`}>📊 System health — queue depth, LLM spend, DLQ</a><br />
-        Auto-generated by the <a href="https://github.com/nplus-father/bookshelf-echo">bookshelf-echo</a> pipeline.
+        Auto-generated by the <a href="https://github.com/nplus-father/bookshelf-echo">bookshelf-echo</a> pipeline
+        · <a href={`${base}rss.xml`}>RSS</a>.
       </footer>
     </main>
   </body>

@@ -39,9 +39,14 @@ const essays = defineCollection({
         url: z.string(),
         source: z.string().optional(),
         summary: z.string().optional(),
+        // digester 對這則新聞的分類（engineering / research / policy /
+        // product / other）。books 頁用它 × 書的 category 做交叉分群。
+        category: z.string().optional(),
       })
       .optional(),
     // slug == library book id == 已發佈書站路徑 nplus.wiki/<slug>/。
+    // category/author 來自 matcher 的檢索結果（書庫自己的 metadata），
+    // 2026-07-27 之前的 essay 沒有這兩欄，分群時歸入「未分類」。
     books: z
       .array(
         z.object({
@@ -49,6 +54,8 @@ const essays = defineCollection({
           chapter: z.string().optional(),
           slug: z.string().optional(),
           chapter_id: z.string().optional(),
+          category: z.string().optional(),
+          author: z.string().optional(),
         }),
       )
       .optional(),
