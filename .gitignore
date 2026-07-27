@@ -11,3 +11,6 @@ dist/
 # Environment
 .env
 .env.*
+
+# metrics 快照改走 data branch（見 bookshelf-echo 的 config/site-publish.sh）
+public/data/metrics/

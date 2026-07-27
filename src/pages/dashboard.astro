@@ -1,100 +1,30 @@
 ---
 import Base from '../layouts/Base.astro';
-import { loadSnapshot, snapshotAge, humanAge } from '../lib/snapshot';
+import { fetchSnapshot, loadSnapshot } from '../lib/snapshot';
+import { renderDashboard } from '../lib/dashboard-view';
 
 const base = import.meta.env.BASE_URL;
 
-// Written by the bookshelf-echo publisher (SnapshotJob) and synced into public/ by its
-// site-publisher sidecar. Absent on a fresh clone and before the first sync, so
-// the page renders a placeholder rather than failing the build. Schema-checked
-// in lib/snapshot.ts — a field the publisher renamed shows up as a build-log
-// warning instead of a silently missing panel.
-const snap = await loadSnapshot();
+/**
+ * 快照的來源有兩層。
+ *
+ * build 時：如果 repo 裡剛好有一份（本機開發、或 2026-07-27 之前的舊 commit），
+ * 就先渲染出來，讓沒有 JS 的讀者也看得到東西。
+ *
+ * 執行時：真正的即時資料在 site repo 的 `data` branch 上。metrics 每小時更新一
+ * 次，如果它跟內容一起進 main，每一次更新都會觸發一輪 Actions build + Pages
+ * deploy——一天 27 次，其中 26 次沒有任何內容變動（見 site-publish.sh）。把它
+ * 移出 main 之後，這一頁自己去 raw.githubusercontent 抓那份 JSON。
+ *
+ * 抓不到就維持 build 時的畫面：dashboard 是健康資訊，不該因為第三方 CDN 而
+ * 讓整頁空白。
+ */
+const METRICS_URL =
+  'https://raw.githubusercontent.com/nplus-father/bookshelf-echo-site/data/metrics/latest.json';
 
-const nf = new Intl.NumberFormat('en-US');
-const num = (n: number) => nf.format(n ?? 0);
-const compact = (n: number) =>
-  new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n ?? 0);
-// Spend is fractions of a cent, so it needs 4 dp to say anything; the budget is a
-// round config value and reads wrong at that precision ($0.5000).
-const usd = (n: number) => '$' + (n ?? 0).toFixed((n ?? 0) >= 1 ? 2 : 4);
-const usdRound = (n: number) => '$' + (n ?? 0).toFixed(2);
-const pct = (r: number) => Math.max(0, Math.min(100, r * 100));
-
-// Severity for a meter fill: accent → warning → danger. Every use is paired with
-// an icon + label chip, so state never rests on colour alone.
-const sev = (ratio: number | null) =>
-  ratio == null ? 'accent' : ratio >= 1 ? 'critical' : ratio >= 0.8 ? 'warning' : 'accent';
-// The chip speaks the status palette, where healthy is "good", not the accent.
-const chipOf = (s: string) => (s === 'accent' ? 'good' : s);
-const ICON: Record<string, string> = { good: '✓', warning: '!', critical: '✕' };
-
-const STATES = ['RECEIVED', 'ENRICHED', 'DIGESTED', 'PUBLISHED', 'DUPLICATE', 'FAILED'];
-const STATE_LABEL: Record<string, string> = {
-  RECEIVED: '已接收',
-  ENRICHED: '已擴充',
-  DIGESTED: '已摘要',
-  PUBLISHED: '已發布',
-  DUPLICATE: '重複',
-  FAILED: '失敗',
-};
-// Only these have consumers. The retry ladder and the DLQ are parking lots by
-// design (ADR-004), so "0 consumers" there is health, not a stall.
-const WORK_QUEUES = ['ingest.q', 'digest.q', 'publish.q'];
-
-const items = snap?.items ?? {};
-const stateRows = STATES.map((s) => ({ state: s, label: STATE_LABEL[s], count: items[s] ?? 0 }));
-const stateMax = Math.max(1, ...stateRows.map((r) => r.count));
-
-const queues = (snap?.queues ?? []).slice();
-const rank = (n: string) => (WORK_QUEUES.includes(n) ? 0 : n === 'dlq.q' ? 1 : 2);
-queues.sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name));
-const queueMax = Math.max(1, ...queues.map((q) => q.messages));
-const dlqDepth = queues.find((q) => q.name === 'dlq.q')?.messages ?? 0;
-
-const llm = snap?.llmToday ?? { costUsd: 0, inputTokens: 0, outputTokens: 0, calls: 0 };
-const budget = snap?.limits?.dailyBudgetUsd ?? null;
-const digestLimit = snap?.limits?.dailyDigestLimit ?? null;
-const costRatio = budget ? llm.costUsd / budget : null;
-
-// 花費拆帳：錢花在哪個用途、由哪個模型執行。舊快照沒有這個陣列，整段就不顯示。
-const PURPOSE_LABEL: Record<string, string> = {
-  DIGEST: '逐則摘要',
-  SELECT: '每日選題',
-  JUDGE: '共鳴判定',
-  ESSAY: '每日評析',
-  WEEKLY_ROLLUP: '每週彙整',
-};
-const breakdown = snap?.llmTodayByPurpose ?? [];
-const breakdownMax = Math.max(1e-9, ...breakdown.map((r) => r.costUsd));
-// 摘要配額算的是 DIGEST 呼叫，不是當天所有 LLM 呼叫；有拆帳就用拆帳的數字。
-const digestCalls = breakdown.length
-  ? breakdown.filter((r) => r.purpose === 'DIGEST').reduce((s, r) => s + r.calls, 0)
-  : llm.calls;
-const digestRatio = digestLimit ? digestCalls / digestLimit : null;
-
-const costSev = sev(costRatio);
-const costChip = chipOf(costSev);
-const COST_TEXT: Record<string, string> = {
-  good: '預算充裕',
-  warning: '接近每日預算',
-  critical: '已達預算，斷路器停放中',
-};
-const digestSev = sev(digestRatio);
-
-const captured = snap?.capturedAt
-  ? new Date(snap.capturedAt).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
-  : null;
-
-// 快照新鮮度。publisher 曾在 2026-07-19 靜默停寫 12 小時，而這一頁上的每個數字
-// 看起來都正常——過期的快照長得和健康的一模一樣。頁面自己講出「這份資料多舊」。
-// 注意：這是 build 時算的，頁面重建時才更新。
-const age = snapshotAge(snap?.capturedAt, new Date(), snap?.snapshotIntervalMinutes ?? 60);
-const AGE_TEXT: Record<string, string> = {
-  good: '資料新鮮',
-  warning: '快照過期，publisher 可能落後',
-  critical: '快照停滯，檢查 publisher 是否還活著',
-};
+// 本機的檔案優先（開發時看得到自己的資料），其次才是 data branch 上那一份。
+const snap = (await loadSnapshot()) ?? (await fetchSnapshot(METRICS_URL));
+const initial = renderDashboard(snap, new Date());
 ---
 
 <Base
@@ -105,211 +35,37 @@ const AGE_TEXT: Record<string, string> = {
 
   <h2>系統健康</h2>
 
-  {
-    !snap && (
-      <p class="empty">
-        尚無快照 — pipeline 首次同步 <code>data/metrics/latest.json</code> 後會自動出現。
-      </p>
-    )
-  }
-
-  {
-    snap && (
-      <div class="viz">
-        <p class="captured">
-          快照時間 {captured} · 由 pipeline 每 {snap.snapshotIntervalMinutes} 分鐘寫入
-          {age && (
-            <span class={`chip chip-${age.severity}`}>
-              <span class="ico" aria-hidden="true">
-                {ICON[age.severity]}
-              </span>
-              {humanAge(age.minutes)} · {AGE_TEXT[age.severity]}
-            </span>
-          )}
-        </p>
-
-        <section class="card hero">
-          <p class="label">今日 LLM 花費</p>
-          <p class="hero-value">{usd(llm.costUsd)}</p>
-          {budget != null && (
-            <>
-              <div class="meter" style={`--meter:var(--sev-${costSev});--fill:${pct(costRatio!)}%`}>
-                <div class="meter-fill" />
-              </div>
-              <p class="sub">
-                <span class={`chip chip-${costChip}`}>
-                  <span class="ico" aria-hidden="true">
-                    {ICON[costChip]}
-                  </span>
-                  {COST_TEXT[costChip]}
-                </span>
-                <span>
-                  每日預算 {usdRound(budget)} · 已用 {Math.round(costRatio! * 100)}%
-                </span>
-              </p>
-            </>
-          )}
-          <p class="sub muted">
-            {num(llm.calls)} 次呼叫 · {compact(llm.inputTokens)} in / {compact(llm.outputTokens)} out
-            tokens
-          </p>
-        </section>
-
-        {breakdown.length > 0 && (
-          <>
-            <h3>花費拆帳</h3>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>用途</th>
-                    <th>模型</th>
-                    <th class="depth-col">占比</th>
-                    <th class="n">花費</th>
-                    <th class="n">呼叫</th>
-                    <th class="n">tokens</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {breakdown.map((r: any) => (
-                    <tr>
-                      <td>{PURPOSE_LABEL[r.purpose] ?? r.purpose}</td>
-                      <td>
-                        <code>{r.model}</code>
-                      </td>
-                      <td class="depth-col">
-                        <span class="qbar" style={`width:${((r.costUsd ?? 0) / breakdownMax) * 100}%`} />
-                      </td>
-                      <td class="n">{usd(r.costUsd)}</td>
-                      <td class="n">{num(r.calls)}</td>
-                      <td class="n">
-                        {compact(r.inputTokens)} / {compact(r.outputTokens)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p class="foot-note">
-              一天的帳單由誰花掉：便宜的逐則摘要跑數百次，昂貴的每日評析只跑一次，總額看不出差別。tokens 欄為 in / out。
-            </p>
-          </>
-        )}
-
-        <div class="kpis">
-          <section class="card">
-            <p class="label">今日摘要</p>
-            <p class="value">
-              {num(digestCalls)}
-              {digestLimit != null && <span class="of"> / {digestLimit}</span>}
-            </p>
-            {digestRatio != null && (
-              <div
-                class="meter"
-                style={`--meter:var(--sev-${digestSev});--fill:${pct(digestRatio)}%`}
-              >
-                <div class="meter-fill" />
-              </div>
-            )}
-            <p class="sub muted">每日高價值上限，超出者留在佇列等下一個視窗</p>
-          </section>
-
-          <section class="card">
-            <p class="label">24 小時新進</p>
-            <p class="value">{num(snap.receivedLast24h)}</p>
-            <p class="sub muted">producers 送入 pipeline 的項目</p>
-          </section>
-
-          <section class="card">
-            <p class="label">DLQ 停放</p>
-            <p class="value">{num(dlqDepth)}</p>
-            <p class="sub">
-              <span class={`chip chip-${dlqDepth > 0 ? 'critical' : 'good'}`}>
-                <span class="ico" aria-hidden="true">
-                  {dlqDepth > 0 ? ICON.critical : ICON.good}
-                </span>
-                {dlqDepth > 0 ? '需要 ops dlq replay' : '無停放訊息'}
-              </span>
-            </p>
-          </section>
-        </div>
-
-        <h3>項目狀態</h3>
-        <div class="bars">
-          {stateRows.map((r) => (
-            <div class="bar-row">
-              <span class="bar-label">{r.label}</span>
-              <span class="bar-track">
-                <span class="bar" style={`--w:${r.count / stateMax}`} />
-                <span class="bar-value">{num(r.count)}</span>
-                {r.state === 'FAILED' && r.count > 0 && (
-                  <span class="chip chip-critical">
-                    <span class="ico" aria-hidden="true">
-                      {ICON.critical}
-                    </span>
-                    需要調查
-                  </span>
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <h3>佇列深度</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>佇列</th>
-                <th class="depth-col">深度</th>
-                <th class="n">訊息</th>
-                <th class="n">消費者</th>
-              </tr>
-            </thead>
-            <tbody>
-              {queues.map((q: any) => (
-                <tr>
-                  <td>
-                    <code>{q.name}</code>
-                  </td>
-                  <td class="depth-col">
-                    <span
-                      class="qbar"
-                      style={`width:${((q.messages ?? 0) / queueMax) * 100}%`}
-                      title={`ready ${num(q.messages_ready)} · unacked ${num(q.messages_unacknowledged)}`}
-                    />
-                  </td>
-                  <td class="n">{num(q.messages)}</td>
-                  <td class="n">
-                    {num(q.consumers)}
-                    {WORK_QUEUES.includes(q.name) && (q.consumers ?? 0) === 0 && (
-                      <span class="chip chip-warning">
-                        <span class="ico" aria-hidden="true">
-                          {ICON.warning}
-                        </span>
-                        無消費者
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p class="foot-note">
-          <code>retry.*</code> 與 <code>dlq.q</code> 依設計就沒有消費者（ADR-004）：它們是停放區，靠 TTL
-          到期後自動退回原佇列。
-        </p>
-      </div>
-    )
-  }
+  <div id="dash" data-src={METRICS_URL} set:html={initial}></div>
 </Base>
 
-<style>
+<script>
+  import { renderDashboard } from '../lib/dashboard-view';
+
+  const host = document.getElementById('dash');
+  const src = host?.dataset.src;
+  if (host && src) {
+    // cache: 'no-store' 只擋瀏覽器這一層；raw.githubusercontent 自己有 5 分鐘
+    // 的 CDN 快取，對每小時更新一次的快照綽綽有餘。
+    fetch(src, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (json) host.innerHTML = renderDashboard(json, new Date());
+      })
+      .catch(() => {
+        /* 抓不到就留著 build 時那一份——它至少是誠實的舊資料，而且會自己說有多舊。 */
+      });
+  }
+</script>
+
+<style is:global>
+  /* 這一頁的樣式必須是全域的：內容由 renderDashboard 在瀏覽器端塞進 #dash，
+     那些節點沒有 Astro 的 scope 屬性。所以改用 #dash 當作命名空間，效果一樣
+     收斂，也不會外漏到別的頁面（books 頁也有 table）。 */
+
   /* Marks use the validated palette: one blue hue for every data bar (identity is
      not the job here, magnitude is), plus the fixed status palette for state.
      Validated against this site's card surfaces — #f9fafb light, #161a22 dark. */
-  .viz {
+  #dash .viz {
     --series-1: #2a78d6;
     --sev-accent: #2a78d6;
     --sev-good: #0ca30c;
@@ -317,7 +73,7 @@ const AGE_TEXT: Record<string, string> = {
     --sev-critical: #d03b3b;
   }
   @media (prefers-color-scheme: dark) {
-    .viz {
+    #dash .viz {
       /* Status steps are fixed across modes; only the blue is re-stepped for the
          dark surface. */
       --series-1: #3987e5;
@@ -325,46 +81,46 @@ const AGE_TEXT: Record<string, string> = {
     }
   }
 
-  .captured,
-  .empty {
+  #dash .captured,
+  #dash .empty {
     color: var(--muted);
     font-size: 0.9rem;
     margin: 0 0 1.25rem;
   }
-  .captured .chip {
+  #dash .captured .chip {
     margin-left: 0.5rem;
   }
 
-  .card {
+  #dash .card {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 1rem 1.1rem;
   }
-  .label {
+  #dash .label {
     color: var(--muted);
     font-size: 0.85rem;
     margin: 0;
   }
   /* Hero figure: the one number the page leads with. Proportional figures — at
      display size tabular-nums reads loose. */
-  .hero-value {
+  #dash .hero-value {
     font-size: 3rem;
     font-weight: 600;
     line-height: 1.15;
     margin: 0.2rem 0 0.6rem;
   }
-  .value {
+  #dash .value {
     font-size: 1.6rem;
     font-weight: 600;
     margin: 0.15rem 0 0.5rem;
   }
-  .value .of {
+  #dash .value .of {
     color: var(--muted);
     font-size: 1rem;
     font-weight: 400;
   }
-  .sub {
+  #dash .sub {
     margin: 0.5rem 0 0;
     font-size: 0.85rem;
     display: flex;
@@ -372,19 +128,19 @@ const AGE_TEXT: Record<string, string> = {
     align-items: center;
     gap: 0.5rem;
   }
-  .sub.muted {
+  #dash .sub.muted {
     color: var(--muted);
   }
 
   /* Meter: fill carries severity; the track is a lighter step of that same ramp,
      so the state reads across the whole bar. */
-  .meter {
+  #dash .meter {
     height: 8px;
     border-radius: 999px;
     background: color-mix(in oklab, var(--meter) 22%, var(--card));
     overflow: hidden;
   }
-  .meter-fill {
+  #dash .meter-fill {
     display: block;
     height: 100%;
     width: var(--fill);
@@ -392,7 +148,7 @@ const AGE_TEXT: Record<string, string> = {
     border-radius: 999px;
   }
 
-  .kpis {
+  #dash .kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 0.75rem;
@@ -400,7 +156,7 @@ const AGE_TEXT: Record<string, string> = {
   }
 
   /* Status chip: colour never travels alone — an icon and a label ride with it. */
-  .chip {
+  #dash .chip {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -408,7 +164,7 @@ const AGE_TEXT: Record<string, string> = {
     white-space: nowrap;
     color: var(--fg);
   }
-  .chip .ico {
+  #dash .chip .ico {
     display: inline-grid;
     place-items: center;
     width: 1.05em;
@@ -418,32 +174,32 @@ const AGE_TEXT: Record<string, string> = {
     font-weight: 700;
     color: #fff;
   }
-  .chip-good .ico {
+  #dash .chip-good .ico {
     background: var(--sev-good);
   }
-  .chip-warning .ico {
+  #dash .chip-warning .ico {
     background: var(--sev-warning);
     color: #1a1a19;
   }
-  .chip-critical .ico {
+  #dash .chip-critical .ico {
     background: var(--sev-critical);
   }
 
-  .bars {
+  #dash .bars {
     display: grid;
     gap: 0.5rem;
   }
-  .bar-row {
+  #dash .bar-row {
     display: grid;
     grid-template-columns: 4.5rem 1fr;
     align-items: center;
     gap: 0.75rem;
   }
-  .bar-label {
+  #dash .bar-label {
     color: var(--muted);
     font-size: 0.85rem;
   }
-  .bar-track {
+  #dash .bar-track {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -452,7 +208,7 @@ const AGE_TEXT: Record<string, string> = {
   /* Thin mark, square at the baseline, 4px rounded at the data end. The track
      reserves room for the tip label, so a full-scale bar can never push its own
      value out of the container. */
-  .bar {
+  #dash .bar {
     height: 14px;
     width: calc(var(--w) * (100% - 4rem));
     background: var(--series-1);
@@ -460,55 +216,55 @@ const AGE_TEXT: Record<string, string> = {
     flex: 0 0 auto;
   }
   /* Value rides the tip, outside the mark — never clipped by it. */
-  .bar-value {
+  #dash .bar-value {
     font-size: 0.85rem;
     font-variant-numeric: tabular-nums;
     color: var(--fg);
   }
 
-  .table-wrap {
+  #dash .table-wrap {
     overflow-x: auto;
   }
-  table {
+  #dash table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.88rem;
   }
-  th,
-  td {
+  #dash th,
+  #dash td {
     text-align: left;
     padding: 0.45rem 0.6rem 0.45rem 0;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
   }
-  th {
+  #dash th {
     color: var(--muted);
     font-weight: 500;
   }
-  .n {
+  #dash .n {
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  td.n {
+  #dash td.n {
     white-space: nowrap;
   }
-  td.n .chip {
+  #dash td.n .chip {
     margin-left: 0.4rem;
   }
-  .depth-col {
+  #dash .depth-col {
     width: 45%;
   }
-  td.depth-col {
+  #dash td.depth-col {
     padding-right: 1rem;
   }
-  .qbar {
+  #dash .qbar {
     display: block;
     height: 10px;
     min-width: 0;
     background: var(--series-1);
     border-radius: 0 4px 4px 0;
   }
-  .foot-note {
+  #dash .foot-note {
     color: var(--muted);
     font-size: 0.8rem;
     margin-top: 0.9rem;

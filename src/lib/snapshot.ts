@@ -68,8 +68,12 @@ export const snapshotSchema = z.object({
 export type Snapshot = z.infer<typeof snapshotSchema>;
 
 /**
- * 讀 public/data/metrics/latest.json。檔案不存在（fresh clone、首次同步前）
- * 回 null，頁面顯示佔位訊息。
+ * 讀 public/data/metrics/latest.json 作為 build 時的初始畫面。
+ *
+ * 2026-07-27 起快照不再隨內容進 main（它每小時一次的更新會讓整個站每小時重建
+ * 一次），所以在 CI 上這個檔案通常**不存在**，回 null 是正常路徑：頁面先渲染
+ * 佔位訊息，再由瀏覽器去 data branch 抓即時的那一份。本機開發時檔案若還在，
+ * 就順便當成離線資料用。
  *
  * schema 對不上時同樣回 null，但**會印出 warning**——這是重點：契約破了要有
  * 聲音，即使頁面選擇降級。
@@ -83,8 +87,32 @@ export async function loadSnapshot(): Promise<Snapshot | null> {
   } catch {
     return null;
   }
+  return validate(JSON.parse(raw));
+}
 
-  const json = JSON.parse(raw);
+/**
+ * build 時去 data branch 抓一份，當作靜態的「最後已知狀態」。
+ *
+ * 有它，關掉 JS 的讀者、爬蟲和社群預覽看到的是真的數字（頁面自己會說這份資料
+ * 多舊），而不是一句「尚無快照」。抓不到就回 null——dashboard 不值得讓一次
+ * 網路失敗弄垮整個 build。
+ */
+export async function fetchSnapshot(url: string, timeoutMs = 5000): Promise<Snapshot | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) {
+      console.warn(`[dashboard] 取不到 build 時快照（HTTP ${res.status}）：${url}`);
+      return null;
+    }
+    return validate(await res.json());
+  } catch (e) {
+    console.warn(`[dashboard] 取不到 build 時快照：${e}`);
+    return null;
+  }
+}
+
+/** schema 對不上時回 null，但**會印出 warning**：契約破了要有聲音。 */
+function validate(json: unknown): Snapshot | null {
   const parsed = snapshotSchema.safeParse(json);
   if (!parsed.success) {
     console.warn(
@@ -93,7 +121,7 @@ export async function loadSnapshot(): Promise<Snapshot | null> {
     );
     return null;
   }
-  warnOnDrift(json);
+  warnOnDrift(json as Record<string, unknown>);
   return parsed.data;
 }
 
@@ -122,27 +150,5 @@ function warnOnDrift(json: Record<string, unknown>) {
   }
 }
 
-/**
- * 快照有多舊。publisher 曾在 2026-07-19 靜默停寫 12 小時，而 dashboard 照樣
- * 顯示一個看似正常的時間戳——過期的快照和健康的快照長得一模一樣。這裡把
- * 「多久沒更新」變成頁面上看得見的狀態。
- *
- * 門檻對著 SNAPSHOT_INTERVAL_MINUTES（預設每小時一次）：兩倍算過期，四倍算
- * 停擺。
- */
-export function snapshotAge(capturedAt: string | undefined, now: Date, intervalMinutes = 60) {
-  if (!capturedAt) return null;
-  const ms = now.getTime() - new Date(capturedAt).getTime();
-  if (Number.isNaN(ms)) return null;
-  const minutes = ms / 60000;
-  const severity = minutes > intervalMinutes * 4 ? 'critical' : minutes > intervalMinutes * 2 ? 'warning' : 'good';
-  return { minutes, severity };
-}
-
-/** 人話的「多久以前」。 */
-export function humanAge(minutes: number): string {
-  if (minutes < 1) return '剛剛';
-  if (minutes < 60) return `${Math.round(minutes)} 分鐘前`;
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} 小時前`;
-  return `${Math.round(minutes / (60 * 24))} 天前`;
-}
+// 「快照有多舊」與「多久以前」現在住在 lib/dashboard-view.ts：那份模板同時要
+// 在瀏覽器裡跑，而這個檔案的 zod schema 只在 build 時用得到。放兩份會漂移。
