@@ -81,6 +81,16 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
         line-height: 1.85;
       }
       article :is(p, li) { max-width: 38em; }
+      /* 引文出處（publisher 標的，見 QuoteAnnotator）。緊跟在 blockquote 下方、
+         右對齊，像紙本書的出處行；沒有 JS 時它就是純文字，仍然讀得到。 */
+      article blockquote { margin: 1.4rem 0 .4rem; }
+      article cite.quote-src {
+        display: block; max-width: 38em; margin: -.1rem 0 1.6rem;
+        text-align: right; font-style: normal;
+        font-size: .82rem; color: var(--muted); letter-spacing: .01em;
+      }
+      article cite.quote-src a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+      article cite.quote-src a:hover { color: var(--accent); }
       article img { max-width: 100%; }
       article h2, article h3 { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC', sans-serif; }
 

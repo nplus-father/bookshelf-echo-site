@@ -1,0 +1,25 @@
+---
+/**
+ * 把 publisher 標在引文下的 `<cite data-chapter-id>` 變成連往章節頁的連結。
+ *
+ * 為什麼分兩邊做：出處的文字（《書名》· 章節）由 pipeline 寫進 markdown，關掉
+ * JS 也讀得到；而「章節 id 怎麼變成網址」的規則只存在 lib/library.ts 一份，
+ * 沒必要在 Kotlin 那邊再實作一次然後等它們漂移。
+ */
+---
+
+<script>
+  import { chapterUrl } from '../lib/library';
+
+  document.querySelectorAll<HTMLElement>('cite.quote-src[data-chapter-id]').forEach((el) => {
+    const id = el.dataset.chapterId;
+    const href = id ? chapterUrl(id) : null;
+    if (!href) return;
+    const a = document.createElement('a');
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = el.textContent ?? '';
+    el.replaceChildren(a);
+  });
+</script>

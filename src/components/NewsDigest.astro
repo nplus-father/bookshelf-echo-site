@@ -7,7 +7,22 @@ import { parseDigest } from '../lib/digest';
 const daily = (await getCollection('daily')).sort(
   (a, b) => b.data.date.getTime() - a.data.date.getTime(),
 );
-const latest = daily[0];
+const newest = daily[0];
+
+/**
+ * 過期的摘要不顯示。
+ *
+ * digest 頁是要退場的（PUBLISH_DIGEST，commit 372433e），而它退場的樣子不是
+ * 消失，是**凍結**——最後一天的內容會永遠掛在首頁上，看起來像今天的新聞。
+ * 那比空白糟得多。門檻與 nplus-backend AiRadarService 的推播 guard 同一條規則
+ * （MAX_AGE_DAYS = 2）：兩邊對「多舊算舊」的定義不該各有一套。
+ *
+ * 判斷在 build 時做。站台只在有新內容時才重建，所以這一區塊會在 pipeline 停止
+ * 產 digest 之後的第一次 build 消失，而不是等到有人重新整理。
+ */
+const MAX_AGE_DAYS = 2;
+const ageDays = newest ? (Date.now() - newest.data.date.getTime()) / 86_400_000 : Infinity;
+const latest = ageDays <= MAX_AGE_DAYS ? newest : undefined;
 const { highlights, alsoSeen } = latest ? parseDigest(latest.body ?? '') : { highlights: [], alsoSeen: [] };
 const day = latest ? latest.data.date.toISOString().slice(0, 10) : null;
 ---

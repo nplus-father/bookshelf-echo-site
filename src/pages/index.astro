@@ -4,6 +4,7 @@ import Base from '../layouts/Base.astro';
 import EssayHeader from '../components/EssayHeader.astro';
 import EssayToc from '../components/EssayToc.astro';
 import NewsDigest from '../components/NewsDigest.astro';
+import QuoteSourceLinks from '../components/QuoteSourceLinks.astro';
 
 const base = import.meta.env.BASE_URL;
 // Homepage = the most recent essay in full. Not "today" — a day without an
@@ -26,6 +27,7 @@ const headings = rendered?.headings ?? [];
         <article>
           <Content />
         </article>
+        <QuoteSourceLinks />
         <nav class="prev-next">
           <span />
           <a href={`${base}archive/`}>All essays →</a>
