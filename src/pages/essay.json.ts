@@ -1,16 +1,6 @@
 import { getCollection } from 'astro:content';
 import { byNewest, excerptOf, siteUrl } from '../lib/essay';
 
-/**
- * Machine-readable latest essay (news-echo), consumed by nplus-backend's
- * AiRadarDailyPushJob. The output keys (date/title/pageUrl/newsTitle/newsUrl/
- * excerpt/books) are a stable contract; only the source changed — provenance now
- * comes from structured frontmatter (EssayRenderer) instead of a prose parse.
- * Days without an essay are legal (寧缺勿濫): the payload then has date: null.
- *
- * pageUrl 以前在這裡硬編一份 https://nplus.wiki/bookshelf-echo-site。網址現在
- * 只有 astro.config 一個來源（site + base），這一頁跟著它走。
- */
 export async function GET() {
   const essays = await getCollection('essays');
   const latest = [...essays].sort(byNewest)[0];

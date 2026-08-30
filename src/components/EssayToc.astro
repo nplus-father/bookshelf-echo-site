@@ -1,16 +1,4 @@
 ---
-/**
- * 文章導航。essay 是三千字上下的長文，先前完全沒有導航——讀到一半就失去
- * 位置感。
- *
- * 兩種模式，取決於這一篇有沒有小標：
- *  - 有 h2/h3：列標題（多數 essay 目前沒有，essayist 不強制產生小標）。
- *  - 沒有：退回列「本篇引用的書」，點擊開章節頁。書才是這個站的骨架，
- *    沒有小標時它就是最好的路標。
- *
- * 寬螢幕（≥1200px）貼在主欄右側，窄螢幕收成 details 放在文章之前。兩份標記
- * 共用同一份資料，靠 CSS 決定誰出現——避免 client JS。
- */
 import { bookSiteUrl, chapterUrl, type EssayBook } from '../lib/library';
 
 interface Props {

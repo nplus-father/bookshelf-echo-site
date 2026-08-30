@@ -1,15 +1,3 @@
-/**
- * dashboard 的呈現層，寫成一個純函式，因為它要在兩個地方跑同一份標記：
- *
- *  - build 時（SSG）：拿 repo 裡的快照渲染一次，讓沒有 JS 的讀者、爬蟲和
- *    社群預覽都看得到內容；
- *  - 瀏覽器裡：快照已經不隨內容一起進 main（每小時一次的 metrics commit 會
- *    害整個站每小時重建一次，見 site-publish.sh），改由頁面自己去抓 data
- *    branch 上的那一份。
- *
- * 兩邊共用同一份模板是刻意的：分成兩份，遲早會有一邊少一塊而沒有人發現。
- */
-
 type Queue = {
   name?: string;
   messages?: number;
@@ -25,7 +13,6 @@ type Breakdown = {
   outputTokens?: number;
   calls?: number;
 };
-/** 寬鬆型別：client 端拿到的是未經 zod 驗證的 JSON，每個欄位都可能缺。 */
 export type SnapshotLike = {
   capturedAt?: string;
   snapshotIntervalMinutes?: number;
@@ -47,13 +34,10 @@ const nf = new Intl.NumberFormat('en-US');
 const num = (n?: number) => nf.format(n ?? 0);
 const compact = (n?: number) =>
   new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(n ?? 0);
-// Spend is fractions of a cent, so it needs 4 dp to say anything; the budget is a
-// round config value and reads wrong at that precision ($0.5000).
 const usd = (n?: number) => '$' + (n ?? 0).toFixed((n ?? 0) >= 1 ? 2 : 4);
 const usdRound = (n?: number) => '$' + (n ?? 0).toFixed(2);
 const pct = (r: number) => Math.max(0, Math.min(100, r * 100));
 
-/** 快照裡的字串（模型名、佇列名）會進 HTML，一律先跳脫。 */
 const esc = (s: unknown): string =>
   String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -61,11 +45,8 @@ const esc = (s: unknown): string =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-// Severity for a meter fill: accent → warning → danger. Every use is paired with
-// an icon + label chip, so state never rests on colour alone.
 const sev = (ratio: number | null) =>
   ratio == null ? 'accent' : ratio >= 1 ? 'critical' : ratio >= 0.8 ? 'warning' : 'accent';
-// The chip speaks the status palette, where healthy is "good", not the accent.
 const chipOf = (s: string) => (s === 'accent' ? 'good' : s);
 const ICON: Record<string, string> = { good: '✓', warning: '!', critical: '✕' };
 
@@ -78,8 +59,6 @@ const STATE_LABEL: Record<string, string> = {
   DUPLICATE: '重複',
   FAILED: '失敗',
 };
-// Only these have consumers. The retry ladder and the DLQ are parking lots by
-// design (ADR-004), so "0 consumers" there is health, not a stall.
 const WORK_QUEUES = ['ingest.q', 'digest.q', 'publish.q'];
 const PURPOSE_LABEL: Record<string, string> = {
   DIGEST: '逐則摘要',
@@ -99,12 +78,6 @@ const AGE_TEXT: Record<string, string> = {
   critical: '快照停滯，檢查 publisher 是否還活著',
 };
 
-/**
- * 快照有多舊。publisher 曾在 2026-07-19 靜默停寫 12 小時，而 dashboard 照樣顯示
- * 一個看似正常的時間戳——過期的快照和健康的快照長得一模一樣。
- *
- * 在瀏覽器裡算比在 build 時算更誠實：頁面現在可能是幾天前建好的。
- */
 export function snapshotAge(capturedAt: string | undefined, now: Date, intervalMinutes = 60) {
   if (!capturedAt) return null;
   const ms = now.getTime() - new Date(capturedAt).getTime();
@@ -114,7 +87,6 @@ export function snapshotAge(capturedAt: string | undefined, now: Date, intervalM
   return { minutes, severity };
 }
 
-/** 人話的「多久以前」。 */
 export function humanAge(minutes: number): string {
   if (minutes < 1) return '剛剛';
   if (minutes < 60) return `${Math.round(minutes)} 分鐘前`;
@@ -149,7 +121,6 @@ export function renderDashboard(snap: SnapshotLike | null, now: Date): string {
 
   const breakdown = snap.llmTodayByPurpose ?? [];
   const breakdownMax = Math.max(1e-9, ...breakdown.map((r) => r.costUsd ?? 0));
-  // 摘要配額算的是 DIGEST 呼叫，不是當天所有 LLM 呼叫；有拆帳就用拆帳的數字。
   const digestCalls = breakdown.length
     ? breakdown.filter((r) => r.purpose === 'DIGEST').reduce((s, r) => s + (r.calls ?? 0), 0)
     : (llm.calls ?? 0);

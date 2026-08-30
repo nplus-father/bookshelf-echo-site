@@ -5,24 +5,9 @@ import { renderDashboard } from '../lib/dashboard-view';
 
 const base = import.meta.env.BASE_URL;
 
-/**
- * 快照的來源有兩層。
- *
- * build 時：如果 repo 裡剛好有一份（本機開發、或 2026-07-27 之前的舊 commit），
- * 就先渲染出來，讓沒有 JS 的讀者也看得到東西。
- *
- * 執行時：真正的即時資料在 site repo 的 `data` branch 上。metrics 每小時更新一
- * 次，如果它跟內容一起進 main，每一次更新都會觸發一輪 Actions build + Pages
- * deploy——一天 27 次，其中 26 次沒有任何內容變動（見 site-publish.sh）。把它
- * 移出 main 之後，這一頁自己去 raw.githubusercontent 抓那份 JSON。
- *
- * 抓不到就維持 build 時的畫面：dashboard 是健康資訊，不該因為第三方 CDN 而
- * 讓整頁空白。
- */
 const METRICS_URL =
   'https://raw.githubusercontent.com/nplus-father/bookshelf-echo-site/data/metrics/latest.json';
 
-// 本機的檔案優先（開發時看得到自己的資料），其次才是 data branch 上那一份。
 const snap = (await loadSnapshot()) ?? (await fetchSnapshot(METRICS_URL));
 const initial = renderDashboard(snap, new Date());
 ---
@@ -44,27 +29,18 @@ const initial = renderDashboard(snap, new Date());
   const host = document.getElementById('dash');
   const src = host?.dataset.src;
   if (host && src) {
-    // cache: 'no-store' 只擋瀏覽器這一層；raw.githubusercontent 自己有 5 分鐘
-    // 的 CDN 快取，對每小時更新一次的快照綽綽有餘。
     fetch(src, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
         if (json) host.innerHTML = renderDashboard(json, new Date());
       })
       .catch(() => {
-        /* 抓不到就留著 build 時那一份——它至少是誠實的舊資料，而且會自己說有多舊。 */
       });
   }
 </script>
 
 <style is:global>
-  /* 這一頁的樣式必須是全域的：內容由 renderDashboard 在瀏覽器端塞進 #dash，
-     那些節點沒有 Astro 的 scope 屬性。所以改用 #dash 當作命名空間，效果一樣
-     收斂，也不會外漏到別的頁面（books 頁也有 table）。 */
 
-  /* Marks use the validated palette: one blue hue for every data bar (identity is
-     not the job here, magnitude is), plus the fixed status palette for state.
-     Validated against this site's card surfaces — #f9fafb light, #161a22 dark. */
   #dash .viz {
     --series-1: #2a78d6;
     --sev-accent: #2a78d6;
@@ -74,8 +50,6 @@ const initial = renderDashboard(snap, new Date());
   }
   @media (prefers-color-scheme: dark) {
     #dash .viz {
-      /* Status steps are fixed across modes; only the blue is re-stepped for the
-         dark surface. */
       --series-1: #3987e5;
       --sev-accent: #3987e5;
     }
@@ -102,8 +76,6 @@ const initial = renderDashboard(snap, new Date());
     font-size: 0.85rem;
     margin: 0;
   }
-  /* Hero figure: the one number the page leads with. Proportional figures — at
-     display size tabular-nums reads loose. */
   #dash .hero-value {
     font-size: 3rem;
     font-weight: 600;
@@ -132,8 +104,6 @@ const initial = renderDashboard(snap, new Date());
     color: var(--muted);
   }
 
-  /* Meter: fill carries severity; the track is a lighter step of that same ramp,
-     so the state reads across the whole bar. */
   #dash .meter {
     height: 8px;
     border-radius: 999px;
@@ -155,7 +125,6 @@ const initial = renderDashboard(snap, new Date());
     margin-top: 0.75rem;
   }
 
-  /* Status chip: colour never travels alone — an icon and a label ride with it. */
   #dash .chip {
     display: inline-flex;
     align-items: center;
@@ -205,9 +174,6 @@ const initial = renderDashboard(snap, new Date());
     gap: 0.5rem;
     min-width: 0;
   }
-  /* Thin mark, square at the baseline, 4px rounded at the data end. The track
-     reserves room for the tip label, so a full-scale bar can never push its own
-     value out of the container. */
   #dash .bar {
     height: 14px;
     width: calc(var(--w) * (100% - 4rem));
@@ -215,7 +181,6 @@ const initial = renderDashboard(snap, new Date());
     border-radius: 0 4px 4px 0;
     flex: 0 0 auto;
   }
-  /* Value rides the tip, outside the mark — never clipped by it. */
   #dash .bar-value {
     font-size: 0.85rem;
     font-variant-numeric: tabular-nums;

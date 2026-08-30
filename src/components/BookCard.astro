@@ -5,8 +5,6 @@ interface Props {
   book: EssayBook;
 }
 const { book } = Astro.props;
-// Link straight to the cited chapter's deployed page; fall back to the book home,
-// then to nothing (book indexed in the library but not yet published as a site).
 const href =
   (book.chapter_id ? chapterUrl(book.chapter_id) : null) ?? (book.slug ? bookSiteUrl(book.slug) : null);
 const cover = book.slug ? bookCoverUrl(book.slug) : null;

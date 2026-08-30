@@ -7,8 +7,6 @@ import NewsDigest from '../components/NewsDigest.astro';
 import QuoteSourceLinks from '../components/QuoteSourceLinks.astro';
 
 const base = import.meta.env.BASE_URL;
-// Homepage = the most recent essay in full. Not "today" — a day without an
-// essay is legal (寧缺勿濫), so we never open a hole; we show the latest one.
 const essays = (await getCollection('essays')).sort(
   (a, b) => b.data.date.getTime() - a.data.date.getTime(),
 );

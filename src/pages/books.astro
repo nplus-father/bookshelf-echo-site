@@ -7,9 +7,6 @@ import { bookSiteUrl, bookCoverUrl } from '../lib/library';
 const base = import.meta.env.BASE_URL;
 const essays = (await getCollection('essays')).sort(byNewest);
 
-// This is the site's signature view: the shelf indexed by what it has answered.
-// 引用只會愈積愈多，所以這一頁的組織方式要先於資料量決定——次數、主題、
-// 以及「哪一類新聞把哪一類書拉下架」的交叉，都是聚合之後才看得見的東西。
 type Cite = { id: string; title: string; date: string; newsCategory?: string };
 type Agg = {
   key: string;
@@ -24,11 +21,8 @@ const UNCATEGORISED = 'uncategorised';
 const byKey = new Map<string, Agg>();
 for (const e of essays) {
   for (const b of e.data.books ?? []) {
-    // 有 slug 用 slug，沒有才退回書名——但兩者要分屬不同命名空間，否則一本書
-    // 哪天缺了 slug 就會被拆成兩筆，而且愈晚愈難察覺。
     const key = b.slug ? `slug:${b.slug}` : `title:${b.title}`;
     const agg = byKey.get(key) ?? { key, title: b.title, slug: b.slug, cites: [] };
-    // metadata 取最先出現（也就是最新一篇）的非空值：書庫改過分類時以新的為準。
     agg.author ??= b.author;
     agg.category ??= b.category;
     agg.cites.push({
@@ -47,7 +41,6 @@ const books = [...byKey.values()].sort(
 const maxCites = Math.max(1, ...books.map((b) => b.cites.length));
 const totalCites = books.reduce((s, b) => s + b.cites.length, 0);
 
-// 主題分群。未分類的一律排最後：那是資料的缺口，不是一個主題。
 const groupMap = new Map<string, Agg[]>();
 for (const b of books) {
   const c = b.category ?? UNCATEGORISED;
@@ -59,9 +52,6 @@ const groups = [...groupMap.entries()].sort(([ka, va], [kb, vb]) => {
   return vb.length - va.length || ka.localeCompare(kb);
 });
 
-// 新聞類別 × 書主題的交叉：這個站最獨特的一句話是「哪一類新聞總是打到哪一類
-// 書」，而那只有兩邊都有分類時才說得出口。資料還太薄就整段不出現——寧可少一
-// 塊，也不要拿三個點畫出一張看起來有結論的表。
 type Cell = { news: string; book: string; n: number };
 const cells = new Map<string, Cell>();
 for (const b of books) {
@@ -209,8 +199,6 @@ const label = (c: string) => (c === UNCATEGORISED ? 'Uncategorised' : c.replace(
 </Base>
 
 <script>
-  // 篩選只改顯示、不重排 DOM：archive 頁指過來的 #slug 錨點在篩掉又切回來之後
-  // 仍然指得到同一個節點。
   const bar = document.querySelector('[data-filters]');
   bar?.addEventListener('click', (ev) => {
     const btn = (ev.target as HTMLElement).closest('button[data-cat]') as HTMLElement | null;
@@ -243,7 +231,6 @@ const label = (c: string) => (c === UNCATEGORISED ? 'Uncategorised' : c.replace(
   }
   .cat-n { font-size: .8rem; }
 
-  /* 封面牆：一眼看到書背，次數在角標上，不必逐行讀。 */
   .shelf {
     list-style: none; padding: 0; margin: 0;
     display: grid; gap: 1.25rem;
@@ -283,6 +270,5 @@ const label = (c: string) => (c === UNCATEGORISED ? 'Uncategorised' : c.replace(
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
   table.matrix thead th, table.matrix tbody th { color: var(--muted); font-weight: 600; text-align: left; }
-  /* 熱度用同一個 accent 的透明度階梯，數字仍留在格子裡——顏色不是唯一線索。 */
   table.matrix td.has { background: color-mix(in srgb, var(--accent) calc(var(--heat) * 55%), transparent); }
 </style>

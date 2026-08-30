@@ -11,7 +11,6 @@ export async function getStaticPaths() {
   );
   return essays.map((entry, i) => ({
     params: { slug: entry.id },
-    // Array is newest-first: i-1 is newer, i+1 is older.
     props: { entry, newer: essays[i - 1] ?? null, older: essays[i + 1] ?? null },
   }));
 }

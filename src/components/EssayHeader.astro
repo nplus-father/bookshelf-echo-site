@@ -14,18 +14,11 @@ interface Props {
 const { data } = Astro.props;
 const day = data.date.toISOString().slice(0, 10);
 const books = data.books ?? [];
-// Only attribute a real outlet (e.g. "Guardian"); the generic "news" source
-// type is noise, so it is dropped rather than shown as "(news)".
 const src = data.news?.source?.trim();
 const outlet = src && !['news', 'rss', ''].includes(src.toLowerCase())
   ? src.charAt(0).toUpperCase() + src.slice(1)
   : null;
-// Essays written before the model was recorded fall back to the generic
-// attribution rather than claiming a model we cannot verify.
 const model = data.model?.trim();
-// 關卡要照實說：critic gate 已在 ADR-011 廢除。現在把關的是事前的相關性判定
-// （judge，便宜層）與事後對來源章節的逐字引文比對（QuoteVerifier，字串比對，
-// 不是模型呼叫）。站台上寫著一個不存在的關卡，比不寫還糟。
 const byline = model ? `Written by ${model}` : 'AI-written';
 ---
 

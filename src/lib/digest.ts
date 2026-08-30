@@ -1,8 +1,3 @@
-// Shared parser for the daily digest markdown the pipeline's DigestRenderer
-// emits. That format is owned by us, so the line-based parse is stable; unknown
-// lines are ignored rather than failing. Used by both daily.json.ts (backend
-// contract) and the homepage News Digest section.
-
 export type Highlight = {
   title: string;
   url: string;
