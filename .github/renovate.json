@@ -1,4 +1,23 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>nplus-father/workflows//renovate"]
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Taipei",
+  "schedule": ["* 0-4 * * 1"],
+  "dependencyDashboard": true,
+  "rebaseWhen": "conflicted",
+  "packageRules": [
+    {
+      "description": "Patches and minors land by themselves on a green CI rather than waiting a quarter for someone to notice. The shared preset deliberately silences them to save Actions minutes across ~1600 book repos; that arithmetic does not apply here, and the updates it silences are the ones this repo most wants. The CI Check workflow added alongside this file is what makes the automerge safe - without a pull_request gate it would be merging blind.",
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "dependencies",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "A major goes in front of a person: a green CI does not mean a library kept its behaviour across a major.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ]
 }
